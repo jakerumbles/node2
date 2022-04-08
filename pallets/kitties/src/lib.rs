@@ -63,14 +63,40 @@ pub mod pallet {
 	// Errors.
 	#[pallet::error]
 	pub enum Error<T> {
-		// ACTION #5a: Declare errors.
+		/// Handles arithmetic overflow when incrementing the Kitty counter.
+		CountForKittiesOverflow,
+		/// An account cannot own more Kitties than MaxKittyCount.
+		ExceedMaxKittyOwned,
+		/// Buyer cannot be the owner.
+		BuyerIsKittyOwner,
+		/// Cannot transfer a kitty to its owner.
+		TransferToSelf,
+		/// This kitty already exists.
+		KittyExists,
+		/// This kitty doesn't exist.
+		KittyNotExist,
+		/// Handles checking that the Kitty is owned by the account transferring, buying or setting a price for it.
+		NotKittyOwner,
+		/// Ensures the Kitty is for Sale.
+		KittyNotForSale,
+		/// Ensures that the buying price is greater than the asking price.
+		KittyBidPriceTooLow,
+		/// Ensures that an account has enough funds to purchase a Kitty.
+		NotEnoughBalance,
 	}
 
 	// Events.
 	#[pallet::event]
 	#[pallet::generate_deposit(pub(super) fn deposit_event)]
 	pub enum Event<T: Config> {
-		// ACTION #3: Declare events
+		/// A new Kitty was successfully created. \[sender, kitty_id\]
+		Created(T::AccountId, T::Hash),
+		/// Kitty price was successfully set. \[sender, kitty_id, new_price\]
+		PriceSet(T::AccountId, T::Hash, Option<BalanceOf<T>>),
+		/// A Kitty was successfully transferred. \[from, to, kitty_id\]
+		Transferred(T::AccountId, T::AccountId, T::Hash),
+		/// A Kitty was successfully bought. \[buyer, seller, kitty_id, bid_price\]
+		Bought(T::AccountId, T::AccountId, T::Hash, BalanceOf<T>),
 	}
 
 	// Storage items.
@@ -110,7 +136,8 @@ pub mod pallet {
 			// Logging to the console
 			log::info!("A kitty is born with ID: {:?}.", kitty_id);
 
-			// ACTION #4: Deposit `Created` event
+			// Deposit `Created` event
+			Self::deposit_event(Event::Created(sender, kitty_id));
 
 			Ok(())
 		}
