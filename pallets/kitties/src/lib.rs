@@ -123,7 +123,29 @@ pub mod pallet {
 		ValueQuery,
 	>;
 
-	// ACTION #11: Our pallet's genesis configuration.
+	// Our pallet's genesis configuration.
+	#[pallet::genesis_config]
+	pub struct GenesisConfig<T: Config> {
+		pub kitties: Vec<(T::AccountId, [u8; 16], Gender)>,
+	}
+
+	// Required to implement default for GenesisConfig
+	#[cfg(feature = "std")]
+	impl<T: Config> Default for GenesisConfig<T> {
+		fn default() -> GenesisConfig<T> {
+			GenesisConfig { kitties: vec![] }
+		}
+	}
+
+	#[pallet::genesis_build]
+	impl<T: Config> GenesisBuild<T> for GenesisConfig<T> {
+		fn build(&self) {
+			// When building a kitty from genesis config, we require the dna and gender to be supplied.
+			for (acct, dna, gender) in &self.kitties {
+				let _ = <Pallet<T>>::mint(acct, Some(dna.clone()), Some(gender.clone()));
+			}
+		}
+	}
 
 	#[pallet::call]
 	impl<T: Config> Pallet<T> {
@@ -210,11 +232,34 @@ pub mod pallet {
 			let kitty = Self::kitties(&kitty_id).ok_or(<Error<T>>::KittyNotExist)?;
 			ensure!(kitty.owner != buyer, <Error<T>>::BuyerIsKittyOwner);
 
-			// ACTION #6: Check if the Kitty is for sale.
+			// Check if the Kitty is for sale and the kitty ask price <= `bid_price`
+			if let Some(ask_price) = kitty.price {
+				ensure!(bid_price >= ask_price, <Error<T>>::KittyBidPriceTooLow);
+			} else {
+				Err(<Error<T>>::KittyNotForSale)?;
+			}
 
-			// ACTION #7: Check if buyer can receive Kitty.
+			// Check the buyer has enough free balance
+			ensure!(T::Currency::free_balance(&buyer) >= bid_price, <Error<T>>::NotEnoughBalance);
 
-			// ACTION #8: Update Balances using the Currency trait.
+			// Check if buyer can receive Kitty.
+			let to_owned = <KittiesOwned<T>>::get(&buyer);
+			ensure!(
+				(to_owned.len() as u32) < T::MaxKittyOwned::get(),
+				<Error<T>>::ExceedMaxKittyOwned
+			);
+
+			let seller = kitty.owner.clone();
+
+			// Update Balances using the Currency trait
+			// Transfer the amount from buyer to seller
+			T::Currency::transfer(&buyer, &seller, bid_price, ExistenceRequirement::KeepAlive)?;
+
+			// Transfer the kitty from seller to buyer
+			Self::transfer_kitty_to(&kitty_id, &buyer)?;
+
+			// Deposit relevant Event
+			Self::deposit_event(<Event<T>>::Bought(buyer, seller, kitty_id, bid_price));
 
 			Ok(())
 		}
@@ -235,9 +280,11 @@ pub mod pallet {
 			ensure!(Self::is_kitty_owner(&parent1, &sender)?, <Error<T>>::NotKittyOwner);
 			ensure!(Self::is_kitty_owner(&parent2, &sender)?, <Error<T>>::NotKittyOwner);
 
-			// ACTION #9: Breed two Kitties using unique DNA
+			// Breed two Kitties using unique DNA
+			let new_dna = Self::breed_dna(&parent1, &parent2)?;
 
-			// ACTION #10: Mint new Kitty using new DNA
+			// Mint new Kitty using new DNA
+			Self::mint(&sender, Some(new_dna), None)?;
 
 			Ok(())
 		}
